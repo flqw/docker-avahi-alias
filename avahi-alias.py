@@ -48,8 +48,8 @@ class AvahiPublisher(object):
 
         if not u'.' in cname:
             cname = cname + '.local'
-        cname = encode_cname(cname)
-        rdata = encode_rdata(server.GetHostNameFqdn())
+        cname = self.encode_cname(cname)
+        rdata = self.encode_rdata(server.GetHostNameFqdn())
         rdata = avahi.string_to_byte_array(rdata)
 
         group.AddRecord(avahi.IF_UNSPEC, avahi.PROTO_UNSPEC, dbus.UInt32(0),
