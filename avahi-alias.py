@@ -20,38 +20,51 @@ The alias will stay published until the script runs.
 import avahi, dbus
 from encodings.idna import ToASCII
 
-TTL = dbus.UInt32(60)
+RAW_TTL = 60
+TTL = dbus.UInt32(RAW_TTL)
 # Got these from /usr/include/avahi-common/defs.h
 CLASS_IN = dbus.UInt16(0x01)
 TYPE_CNAME = dbus.UInt16(0x05)
 
+class AvahiPublisher(object):
 
-def publish_cname(cname):
-    bus = dbus.SystemBus()
-    server = dbus.Interface(bus.get_object(avahi.DBUS_NAME, avahi.DBUS_PATH_SERVER),
-            avahi.DBUS_INTERFACE_SERVER)
-    group = dbus.Interface(bus.get_object(avahi.DBUS_NAME, server.EntryGroupNew()),
-            avahi.DBUS_INTERFACE_ENTRY_GROUP)
+    cnames = set()
 
-    if not u'.' in cname:
-        cname = cname + '.local'
-    cname = encode_cname(cname)
-    rdata = encode_rdata(server.GetHostNameFqdn())
-    rdata = avahi.string_to_byte_array(rdata)
+    def __init__(self, cnames):
+        for each in cnames:
+            name = unicode(each, locale.getpreferredencoding())
+            self.cnames.add(name)
 
-    group.AddRecord(avahi.IF_UNSPEC, avahi.PROTO_UNSPEC, dbus.UInt32(0),
-        cname, CLASS_IN, TYPE_CNAME, TTL, rdata)
-    group.Commit()
+    def publish_all(self):
+        for cname in self.cnames:
+            self.publish_cname(cname)
+
+    def publish_cname(self, cname):
+        bus = dbus.SystemBus()
+        server = dbus.Interface(bus.get_object(avahi.DBUS_NAME, avahi.DBUS_PATH_SERVER),
+                avahi.DBUS_INTERFACE_SERVER)
+        group = dbus.Interface(bus.get_object(avahi.DBUS_NAME, server.EntryGroupNew()),
+                avahi.DBUS_INTERFACE_ENTRY_GROUP)
+
+        if not u'.' in cname:
+            cname = cname + '.local'
+        cname = encode_cname(cname)
+        rdata = encode_rdata(server.GetHostNameFqdn())
+        rdata = avahi.string_to_byte_array(rdata)
+
+        group.AddRecord(avahi.IF_UNSPEC, avahi.PROTO_UNSPEC, dbus.UInt32(0),
+            cname, CLASS_IN, TYPE_CNAME, TTL, rdata)
+        group.Commit()
 
 
-def encode_cname(name):
-    return '.'.join( ToASCII(p) for p in name.split('.') if p )
+    def encode_cname(self, name):
+        return '.'.join( ToASCII(p) for p in name.split('.') if p )
 
-def encode_rdata(name):
-    def enc(part):
-        a = ToASCII(part)
-        return chr(len(a)), a
-    return ''.join( '%s%s' % enc(p) for p in name.split('.') if p ) + '\0'
+    def encode_rdata(self, name):
+        def enc(part):
+            a = ToASCII(part)
+            return chr(len(a)), a
+        return ''.join( '%s%s' % enc(p) for p in name.split('.') if p ) + '\0'
 
 if __name__ == '__main__':
     import time, sys, locale
@@ -59,12 +72,14 @@ if __name__ == '__main__':
         script_name = sys.argv[0]
         print "Usage: %s hostname.local [hostname2.local] [hostname3.local]" % script_name
         sys.exit(1)
+        
+    publisher = AvahiPublisher(sys.argv[1:])
+    publisher.publish_all()
 
-    for each in sys.argv[1:]:
-        name = unicode(each, locale.getpreferredencoding())
-        publish_cname(name)
     try:
-        while True: time.sleep(60)
+        while True: 
+            time.sleep(RAW_TTL - 10)
+            publisher.publish_all()
     except KeyboardInterrupt:
         print "Exiting"
         sys.exit(0)
